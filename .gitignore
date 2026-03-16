@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual env
+venv/
+env/
+.venv/
+
+# Dataset / model
+*.h5
+*.pt
+*.pth
+*.pkl
+*.joblib
+data/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
