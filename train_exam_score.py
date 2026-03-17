@@ -1,6 +1,5 @@
 # ============================================================
-# 🎓 DỰ ĐOÁN ĐIỂM THI - PHIÊN BẢN SỬA LỖI
-# Đã fix: Data Leakage + Mất cân bằng dataset
+# 🎓 DỰ ĐOÁN ĐIỂM 
 # ============================================================
 
 import pandas as pd
@@ -12,15 +11,11 @@ warnings.filterwarnings('ignore')
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import Ridge
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-
-try:
-    from xgboost import XGBRegressor
-    HAS_XGBOOST = True
-except ImportError:
-    HAS_XGBOOST = False
 
 
 # ============================================================
@@ -116,24 +111,24 @@ print("=" * 60)
 # ✅ Chỉ giữ các features hành vi và môi trường
 
 SAFE_FEATURES = [
-    'study_hours',      # Giờ học mỗi ngày
-    'attendance',       # Tỉ lệ đi học
-    'sleep_hours',      # Giờ ngủ
-    'physical_activity',# Hoạt động thể chất
-    'stress_level',     # Mức độ stress
-    'motivation',       # Động lực học
-    'internet_access',  # Kết nối internet
-    'extracurricular',  # Hoạt động ngoại khóa
+    'study_hours',       # Giờ học mỗi ngày
+    'attendance',        # Tỉ lệ đi học
+    'sleep_hours',       # Giờ ngủ
+    'physical_activity', # Hoạt động thể chất
+    'stress_level',      # Mức độ stress
+    'motivation',        # Động lực học
+    'internet_access',   # Kết nối internet
+    'extracurricular',   # Hoạt động ngoại khóa
     'parental_education',# Trình độ cha mẹ
-    'family_income',    # Thu nhập gia đình
-    'study_method',     # Phương pháp học
-    'gender',           # Giới tính
-    'age',              # Tuổi
-    'screen_time',      # Thời gian dùng điện thoại
-    'mental_health',    # Sức khỏe tinh thần
-    'time_management',  # Kỹ năng quản lý thời gian
-    'exam_score',       # TARGET
-    'source',           # Để cân bằng dataset
+    'family_income',     # Thu nhập gia đình
+    'study_method',      # Phương pháp học
+    'gender',            # Giới tính
+    'age',               # Tuổi
+    'screen_time',       # Thời gian dùng điện thoại
+    'mental_health',     # Sức khỏe tinh thần
+    'time_management',   # Kỹ năng quản lý thời gian
+    'exam_score',        # TARGET
+    'source',            # Để cân bằng dataset
 ]
 
 df_all = pd.concat([d1, d2, d3, d6, d7], ignore_index=True)
@@ -157,8 +152,6 @@ for src in ['D1','D2','D3','D6','D7']:
     sub = df_all[df_all['source']==src]
     print(f"    {src}: {len(sub):>6,} dòng | mean score = {sub['exam_score'].mean():.1f}")
 
-# D2 chiếm 63% data và có phân phối điểm cao bất thường
-# → Downsample D2 xuống bằng tổng các dataset còn lại
 others  = df_all[df_all['source'] != 'D2']
 d2_cap  = df_all[df_all['source'] == 'D2'].sample(n=len(others), random_state=42)
 df_bal  = pd.concat([others, d2_cap], ignore_index=True)
@@ -197,17 +190,22 @@ print(f"  Tổng: {X_imp.shape[1]} features | {X_imp.shape[0]:,} mẫu")
 # ============================================================
 # BƯỚC 5: CHIA DỮ LIỆU
 # ============================================================
+print("\n" + "=" * 60)
+print("BƯỚC 5: CHIA DỮ LIỆU")
+print("=" * 60)
+
 X_temp, X_test, y_temp, y_test = train_test_split(
     X_imp, y, test_size=0.15, random_state=42)
 X_train, X_val, y_train, y_val = train_test_split(
     X_temp, y_temp, test_size=0.176, random_state=42)
 
+# Scale (dùng cho Linear Regression và KNN)
 scaler = StandardScaler()
 X_train_sc = scaler.fit_transform(X_train)
 X_val_sc   = scaler.transform(X_val)
 X_test_sc  = scaler.transform(X_test)
 
-print(f"\n  Train: {len(X_train):,} | Val: {len(X_val):,} | Test: {len(X_test):,}")
+print(f"  Train: {len(X_train):,} | Val: {len(X_val):,} | Test: {len(X_test):,}")
 
 
 # ============================================================
@@ -226,22 +224,34 @@ def evaluate(model, Xtr, ytr, Xvl, yvl, name, scaled=False):
     print(f"\n  🤖 {name}")
     print(f"     MAE  = {mae:.2f}  (sai lệch ±{mae:.1f} điểm)")
     print(f"     R²   = {r2:.4f}  ({r2*100:.1f}%)")
-    return {"name":name,"model":model,"mae":mae,"rmse":rmse,"r2":r2,"scaled":scaled}
+    return {"name": name, "model": model, "mae": mae, "rmse": rmse, "r2": r2, "scaled": scaled}
 
 results = []
-results.append(evaluate(Ridge(alpha=1.0),
-    X_train_sc, y_train, X_val_sc, y_val, "Ridge Regression", scaled=True))
+
+# 1. Linear Regression — cần scale
 results.append(evaluate(
-    RandomForestRegressor(200, max_depth=14, random_state=42, n_jobs=-1),
-    X_train, y_train, X_val, y_val, "Random Forest"))
+    LinearRegression(),
+    X_train_sc, y_train, X_val_sc, y_val,
+    "Linear Regression", scaled=True))
+
+# 2. KNN — cần scale
 results.append(evaluate(
-    GradientBoostingRegressor(n_estimators=200, learning_rate=0.05, max_depth=5, random_state=42),
-    X_train, y_train, X_val, y_val, "Gradient Boosting"))
-if HAS_XGBOOST:
-    results.append(evaluate(
-        XGBRegressor(300, learning_rate=0.05, max_depth=5,
-                     subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=0),
-        X_train, y_train, X_val, y_val, "XGBoost"))
+    KNeighborsRegressor(n_neighbors=10, weights='distance', n_jobs=-1),
+    X_train_sc, y_train, X_val_sc, y_val,
+    "KNN (k=10)", scaled=True))
+
+# 3. Decision Tree — không cần scale
+results.append(evaluate(
+    DecisionTreeRegressor(max_depth=10, min_samples_leaf=10, random_state=42),
+    X_train, y_train, X_val, y_val,
+    "Decision Tree"))
+
+# 4. Random Forest — không cần scale
+results.append(evaluate(
+    RandomForestRegressor(n_estimators=200, max_depth=14, min_samples_leaf=5,
+                          random_state=42, n_jobs=-1),
+    X_train, y_train, X_val, y_val,
+    "Random Forest"))
 
 
 # ============================================================
@@ -264,8 +274,10 @@ print(f"  MAE  = {test_mae:.2f}  → sai lệch trung bình ±{test_mae:.1f} đi
 print(f"  RMSE = {test_rmse:.2f}")
 print(f"  R²   = {test_r2:.4f}  ({test_r2*100:.1f}%)")
 
-summary = pd.DataFrame([{"Model":r["name"],"MAE":round(r["mae"],2),"R²":round(r["r2"],3)}
-                         for r in results]).sort_values("MAE")
+summary = pd.DataFrame([
+    {"Model": r["name"], "MAE": round(r["mae"], 2), "R²": round(r["r2"], 3)}
+    for r in results
+]).sort_values("MAE")
 print(f"\n{summary.to_string(index=False)}")
 
 
@@ -273,16 +285,17 @@ print(f"\n{summary.to_string(index=False)}")
 # BƯỚC 8: BIỂU ĐỒ
 # ============================================================
 fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-fig.suptitle(f"Kết quả sau khi sửa lỗi  |  {best['name']}  |  MAE={test_mae:.2f}  R²={test_r2:.3f}",
-             fontsize=13, fontweight='bold')
+fig.suptitle(
+    f"Kết quả  |  {best['name']}  |  MAE={test_mae:.2f}  R²={test_r2:.3f}",
+    fontsize=13, fontweight='bold')
 
 # Plot 1: Predicted vs Actual
 ax = axes[0]
 idx = np.random.choice(len(y_test), min(3000, len(y_test)), replace=False)
 yt, yp = y_test.values[idx], y_pred[idx]
 ax.scatter(yt, yp, alpha=0.3, s=12, color='#2980b9')
-lo, hi = min(yt.min(),yp.min())-2, max(yt.max(),yp.max())+2
-ax.plot([lo,hi],[lo,hi],'r--',lw=1.5,label='Hoàn hảo')
+lo, hi = min(yt.min(), yp.min())-2, max(yt.max(), yp.max())+2
+ax.plot([lo, hi], [lo, hi], 'r--', lw=1.5, label='Hoàn hảo')
 ax.set_xlabel("Điểm thực tế"); ax.set_ylabel("Điểm dự đoán")
 ax.set_title("Thực tế vs Dự đoán")
 ax.text(0.05, 0.92, f"R²={test_r2:.3f}", transform=ax.transAxes,
@@ -297,13 +310,28 @@ ax.axvline(0, color='red', linestyle='--', lw=1.5)
 ax.set_xlabel("Sai số"); ax.set_ylabel("Số lượng")
 ax.set_title(f"Phân phối sai số\nMean={residuals.mean():.2f}  Std={residuals.std():.2f}")
 
-# Plot 3: Feature Importance
+# Plot 3: So sánh MAE các model
 ax = axes[2]
+names = [r['name'] for r in results]
+maes  = [r['mae']  for r in results]
+colors = ['#3498db', '#e74c3c', '#2ecc71', '#e67e22']
+bars = ax.barh(names, maes, color=colors[:len(results)], edgecolor='white')
+ax.set_xlabel("MAE (thấp hơn = tốt hơn)")
+ax.set_title("So sánh MAE các Model")
+for bar, val in zip(bars, maes):
+    ax.text(bar.get_width() + 0.1, bar.get_y() + bar.get_height()/2,
+            f'{val:.2f}', va='center', fontsize=10)
+
+# Feature importance (chỉ hiển thị nếu model tốt nhất có thuộc tính này)
 if hasattr(best['model'], 'feature_importances_'):
+    fig2, ax2 = plt.subplots(figsize=(8, 5))
     fi = pd.Series(best['model'].feature_importances_, index=X_train.columns)
-    fi.sort_values(ascending=True).tail(12).plot(kind='barh', ax=ax, color='#e67e22')
-    ax.set_title("Feature Importance")
-    ax.set_xlabel("Importance")
+    fi.sort_values(ascending=True).tail(12).plot(kind='barh', ax=ax2, color='#e67e22')
+    ax2.set_title(f"Feature Importance — {best['name']}")
+    ax2.set_xlabel("Importance")
+    plt.tight_layout()
+    plt.savefig("feature_importance.png", dpi=150, bbox_inches='tight')
+    print("✅ Lưu biểu đồ: feature_importance.png")
 
 plt.tight_layout()
 plt.savefig("ket_qua_fixed.png", dpi=150, bbox_inches='tight')
@@ -322,7 +350,7 @@ model_pkg = {
     'features': list(X_train.columns),
     'metrics' : {'mae': test_mae, 'rmse': test_rmse, 'r2': test_r2},
 }
-with open("exam_score_model_fixed.pkl","wb") as f:
+with open("exam_score_model_fixed.pkl", "wb") as f:
     pickle.dump(model_pkg, f)
 print("✅ Lưu model: exam_score_model_fixed.pkl")
 
@@ -334,27 +362,96 @@ print("\n" + "=" * 60)
 print("KIỂM TRA LOGIC DỰ ĐOÁN")
 print("=" * 60)
 
-def predict(study_hours, attendance, **kwargs):
-    row = {'study_hours': study_hours, 'attendance': attendance}
-    row.update(kwargs)
-    df_in = pd.DataFrame([row])
+def predict(row_dict):
+    """
+    Truyền đầy đủ tất cả features — không để NaN.
+    Imputer vẫn giữ để xử lý edge case, nhưng không ảnh hưởng kết quả.
+    """
+    df_in = pd.DataFrame([row_dict])
+    # Đảm bảo đúng thứ tự cột
     for col in model_pkg['features']:
         if col not in df_in.columns:
-            df_in[col] = np.nan
+            df_in[col] = np.nan  # fallback — không nên xảy ra
     df_in = df_in[model_pkg['features']]
-    df_imp = pd.DataFrame(model_pkg['imputer'].transform(df_in), columns=model_pkg['features'])
+    df_imp = pd.DataFrame(
+        model_pkg['imputer'].transform(df_in), columns=model_pkg['features'])
     X_in = model_pkg['scaler'].transform(df_imp) if model_pkg['scaler'] else df_imp
     sc = float(np.clip(model_pkg['model'].predict(X_in)[0], 0, 100))
     return sc
 
-print("\n  So sánh dự đoán sau khi sửa lỗi:")
+# ── Định nghĩa 3 hồ sơ học sinh đầy đủ ─────────────────────
+# Tất cả features được khai báo tường minh, không để NaN
+# Các giá trị categorical dùng string (LabelEncoder sẽ xử lý nếu cần)
+
+PROFILE_LAZY = {
+    'study_hours'      : 1,      # học rất ít
+    'attendance'       : 50,     # hay nghỉ học
+    'sleep_hours'      : 5,      # ngủ ít
+    'physical_activity': 1,      # ít vận động
+    'stress_level'     : 8,      # stress cao
+    'motivation'       : 2,      # ít động lực
+    'internet_access'  : 1,      # có internet (1=Yes hoặc dạng số)
+    'extracurricular'  : 0,      # không tham gia
+    'parental_education': 0,     # thấp (encoded)
+    'family_income'    : 0,      # thấp (encoded)
+    'study_method'     : 0,      # passive (encoded)
+    'gender'           : 0,
+    'age'              : 17,
+    'screen_time'      : 8,      # dùng điện thoại nhiều
+    'mental_health'    : 3,      # sức khỏe tinh thần kém
+    'time_management'  : 2,      # quản lý thời gian kém
+}
+
+PROFILE_AVERAGE = {
+    'study_hours'      : 4,
+    'attendance'       : 75,
+    'sleep_hours'      : 7,
+    'physical_activity': 3,
+    'stress_level'     : 5,
+    'motivation'       : 5,
+    'internet_access'  : 1,
+    'extracurricular'  : 1,
+    'parental_education': 1,
+    'family_income'    : 1,
+    'study_method'     : 1,
+    'gender'           : 0,
+    'age'              : 17,
+    'screen_time'      : 4,
+    'mental_health'    : 6,
+    'time_management'  : 5,
+}
+
+PROFILE_HARD = {
+    'study_hours'      : 8,
+    'attendance'       : 95,
+    'sleep_hours'      : 8,
+    'physical_activity': 5,
+    'stress_level'     : 2,
+    'motivation'       : 9,
+    'internet_access'  : 1,
+    'extracurricular'  : 1,
+    'parental_education': 2,
+    'family_income'    : 2,
+    'study_method'     : 2,
+    'gender'           : 0,
+    'age'              : 17,
+    'screen_time'      : 1,
+    'mental_health'    : 9,
+    'time_management'  : 9,
+}
+
+# Chỉ giữ features mà model thực sự dùng
+def filter_features(profile):
+    return {k: v for k, v in profile.items() if k in model_pkg['features']}
+
+print("\n  So sánh dự đoán (đầy đủ features, không NaN):")
 cases = [
-    ("Học sinh lười   (study=1h, att=50%, stress=8)", 1, 50, dict(sleep_hours=5, stress_level=8)),
-    ("Học sinh TB     (study=4h, att=75%, stress=5)", 4, 75, dict(sleep_hours=7, stress_level=5)),
-    ("Học sinh chăm   (study=8h, att=95%, stress=2)", 8, 95, dict(sleep_hours=8, stress_level=2)),
+    ("Học sinh lười   (study=1h, att=50%, stress=8)", PROFILE_LAZY),
+    ("Học sinh TB     (study=4h, att=75%, stress=5)", PROFILE_AVERAGE),
+    ("Học sinh chăm   (study=8h, att=95%, stress=2)", PROFILE_HARD),
 ]
-for label, sh, att, kw in cases:
-    sc = predict(sh, att, **kw)
+for label, profile in cases:
+    sc = predict(filter_features(profile))
     bar = '█' * int(sc / 5)
     print(f"  {label}: {sc:.1f}  {bar}")
 
