@@ -159,7 +159,31 @@ df_bal  = pd.concat([others, d2_cap], ignore_index=True)
 print(f"\n  Sau cân bằng: {len(df_bal):,} dòng | mean score = {df_bal['exam_score'].mean():.1f}")
 print(f"  (Trước: 126,110 dòng | mean score = {df_all['exam_score'].mean():.1f})")
 
+# ============================================================
+# 📊 VISUALIZE: TRƯỚC & SAU CÂN BẰNG
+# ============================================================
 
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+# --- Trước cân bằng ---
+ax = axes[0]
+counts_before = df_all['source'].value_counts()
+ax.bar(counts_before.index, counts_before.values)
+ax.set_title("Trước cân bằng dataset")
+ax.set_xlabel("Dataset nguồn")
+ax.set_ylabel("Số lượng")
+
+# --- Sau cân bằng ---
+ax = axes[1]
+counts_after = df_bal['source'].value_counts()
+ax.bar(counts_after.index, counts_after.values)
+ax.set_title("Sau cân bằng dataset")
+ax.set_xlabel("Dataset nguồn")
+ax.set_ylabel("Số lượng")
+plt.savefig("truoc_va_sau_can_bang.png", dpi=150, bbox_inches='tight')
+print("\n✅ Lưu biểu đồ: truoc_va_sau_can_bang.png")
+plt.tight_layout()
+plt.show()
 # ============================================================
 # BƯỚC 4: XỬ LÝ FEATURES
 # ============================================================
@@ -228,25 +252,25 @@ def evaluate(model, Xtr, ytr, Xvl, yvl, name, scaled=False):
 
 results = []
 
-# 1. Linear Regression — cần scale
+# 1. Linear Regression
 results.append(evaluate(
     LinearRegression(),
     X_train_sc, y_train, X_val_sc, y_val,
     "Linear Regression", scaled=True))
 
-# 2. KNN — cần scale
+# 2. KNN 
 results.append(evaluate(
     KNeighborsRegressor(n_neighbors=10, weights='distance', n_jobs=-1),
     X_train_sc, y_train, X_val_sc, y_val,
     "KNN (k=10)", scaled=True))
 
-# 3. Decision Tree — không cần scale
+# 3. Decision Tree 
 results.append(evaluate(
     DecisionTreeRegressor(max_depth=10, min_samples_leaf=10, random_state=42),
     X_train, y_train, X_val, y_val,
     "Decision Tree"))
 
-# 4. Random Forest — không cần scale
+# 4. Random Forest 
 results.append(evaluate(
     RandomForestRegressor(n_estimators=200, max_depth=14, min_samples_leaf=5,
                           random_state=42, n_jobs=-1),
